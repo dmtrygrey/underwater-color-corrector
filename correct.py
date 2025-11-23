@@ -2,12 +2,15 @@ import sys
 import numpy as np
 import cv2
 import math
+import os
+import subprocess
 
 THRESHOLD_RATIO = 2000
 MIN_AVG_RED = 60
 MAX_HUE_SHIFT = 120
 BLUE_MAGIC_VALUE = 1.2
 SAMPLE_SECONDS = 2 # Extracts color correction from every N seconds
+
 
 def hue_shift_red(mat, h):
 
@@ -19,6 +22,7 @@ def hue_shift_red(mat, h):
     b = (0.114 - 0.114 * U - 0.497 * W) * mat[..., 2]
 
     return np.dstack([r, g, b])
+
 
 def normalizing_interval(array):
 
@@ -35,6 +39,7 @@ def normalizing_interval(array):
 
     return (low, high)
 
+
 def apply_filter(mat, filt):
 
     r = mat[..., 0]
@@ -50,13 +55,14 @@ def apply_filter(mat, filt):
 
     return filtered_mat
 
+
 def get_filter_matrix(mat):
 
     mat = cv2.resize(mat, (256, 256))
 
     # Get average values of RGB
     avg_mat = np.array(cv2.mean(mat)[:3], dtype=np.uint8)
-    
+
     # Find hue shift so that average red reaches MIN_AVG_RED
     new_avg_r = avg_mat[0]
     hue_shift = 0
@@ -82,7 +88,7 @@ def get_filter_matrix(mat):
     normalize_mat = np.zeros((256, 3))
     threshold_level = (mat.shape[0]*mat.shape[1])/THRESHOLD_RATIO
     for x in range(256):
-        
+
         if hist_r[x] < threshold_level:
             normalize_mat[x][0] = x
 
@@ -123,24 +129,26 @@ def get_filter_matrix(mat):
         0, 0, 0, 1, 0,
     ])
 
+
 def correct(mat):
     original_mat = mat.copy()
 
     filter_matrix = get_filter_matrix(mat)
-    
+
     corrected_mat = apply_filter(original_mat, filter_matrix)
     corrected_mat = cv2.cvtColor(corrected_mat, cv2.COLOR_RGB2BGR)
 
     return corrected_mat
 
+
 def correct_image(input_path, output_path):
     mat = cv2.imread(input_path)
     rgb_mat = cv2.cvtColor(mat, cv2.COLOR_BGR2RGB)
-    
+
     corrected_mat = correct(rgb_mat)
 
     cv2.imwrite(output_path, corrected_mat)
-    
+
     preview = mat.copy()
     width = preview.shape[1] // 2
     preview[::, width:] = corrected_mat[::, width:]
@@ -151,21 +159,21 @@ def correct_image(input_path, output_path):
 
 
 def analyze_video(input_video_path, output_video_path):
-    
+
     # Initialize new video writer
     cap = cv2.VideoCapture(input_video_path)
     fps = math.ceil(cap.get(cv2.CAP_PROP_FPS))
     frame_count = math.ceil(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    
+
     # Get filter matrices for every 10th frame
     filter_matrix_indexes = []
     filter_matrices = []
     count = 0
-    
+
     print("Analyzing...")
+
     while(cap.isOpened()):
-        
-        count += 1  
+        count += 1
         print(f"{count} frames", end="\r")
         ret, frame = cap.read()
         if not ret:
@@ -183,11 +191,11 @@ def analyze_video(input_video_path, output_video_path):
         # Pick filter matrix from every N seconds
         if count % (fps * SAMPLE_SECONDS) == 0:
             mat = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            filter_matrix_indexes.append(count) 
+            filter_matrix_indexes.append(count)
             filter_matrices.append(get_filter_matrix(mat))
 
         yield count
-        
+
     cap.release()
 
     # Build a interpolation function to get filter matrix at any given frame
@@ -202,22 +210,46 @@ def analyze_video(input_video_path, output_video_path):
         "filter_indices": filter_matrix_indexes
     }
 
-def process_video(video_data, yield_preview=False):
-    
+
+def mux_audio(source_with_audio_path, video_without_audio_path, output_path):
+    """Mux audio from `source_with_audio_path` into `video_without_audio_path`, writing to `output_path`.
+
+    This uses `ffmpeg` and requires `ffmpeg` to be installed and available on PATH.
+    """
+    cmd = [
+        'ffmpeg', '-y',
+        '-i', video_without_audio_path,
+        '-i', source_with_audio_path,
+        '-c', 'copy',
+        '-map', '0:v:0',
+        '-map', '1:a:0',
+        '-shortest',
+        output_path
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode(errors='ignore') if e.stderr is not None else str(e)
+        raise RuntimeError(f"ffmpeg failed to mux audio: {stderr}")
+
+
+def process_video(video_data, yield_preview=False, merge_audio=True, final_output_path=None):
+
     cap = cv2.VideoCapture(video_data["input_video_path"])
 
     frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    new_video = cv2.VideoWriter(video_data["output_video_path"], fourcc, video_data["fps"], (int(frame_width), int(frame_height)))      
+    new_video = cv2.VideoWriter(video_data["output_video_path"], fourcc, video_data["fps"], (int(frame_width), int(frame_height)))
 
     filter_matrices = video_data["filters"]
     filter_indices = video_data["filter_indices"]
 
     filter_matrix_size = len(filter_matrices[0])
-    def get_interpolated_filter_matrix(frame_number):
 
+    def get_interpolated_filter_matrix(frame_number):
         return [np.interp(frame_number, filter_indices, filter_matrices[..., x]) for x in range(filter_matrix_size)]
 
     print("Processing...")
@@ -226,13 +258,13 @@ def process_video(video_data, yield_preview=False):
 
     count = 0
     cap = cv2.VideoCapture(video_data["input_video_path"])
+
     while(cap.isOpened()):
-        
-        count += 1  
+        count += 1
         percent = 100*count/frame_count
         print("{:.2f}".format(percent), end=" % \r")
         ret, frame = cap.read()
-        
+
         if not ret:
             # End video read if we have gone beyond reported frame count
             if count >= frame_count:
@@ -251,7 +283,7 @@ def process_video(video_data, yield_preview=False):
         corrected_mat = apply_filter(rgb_mat, interpolated_filter_matrix)
         corrected_mat = cv2.cvtColor(corrected_mat, cv2.COLOR_RGB2BGR)
 
-        new_video.write(corrected_mat) 
+        new_video.write(corrected_mat)
 
         if yield_preview:
             preview = frame.copy()
@@ -265,10 +297,28 @@ def process_video(video_data, yield_preview=False):
         else:
             yield None
 
-    
-
     cap.release()
     new_video.release()
+
+    # Optionally mux audio from the source into the processed video using ffmpeg
+    if merge_audio:
+        processed_path = video_data.get("output_video_path")
+        source_path = video_data.get("input_video_path")
+        if not processed_path or not source_path:
+            print("Cannot mux audio: missing paths in video_data")
+        else:
+            if final_output_path:
+                merged_path = final_output_path
+            else:
+                base, ext = os.path.splitext(processed_path)
+                ext = ext if ext else '.mp4'
+                merged_path = f"{base}_with_audio{ext}"
+
+            try:
+                mux_audio(source_path, processed_path, merged_path)
+                print(f"Muxed audio into: {merged_path}")
+            except Exception as e:
+                print(f"Failed to mux audio: {e}")
 
 
 if __name__ == "__main__":
@@ -277,26 +327,23 @@ if __name__ == "__main__":
         print("Usage")
         print("-"*20)
         print("For image:")
-        print("$python correct.py image <source_image_path> <output_image_path>\n")
+        print("python correct.py image <source_image_path> <output_image_path>\n")
         print("-"*20)
         print("For video:")
-        print("$python correct.py video <source_video_path> <output_video_path>\n")
+        print("python correct.py video <source_video_path> <output_video_path>\n")
         exit(0)
 
     if (sys.argv[1]) == "image":
         mat = cv2.imread(sys.argv[2])
         mat = cv2.cvtColor(mat, cv2.COLOR_BGR2RGB)
-        
+
         corrected_mat = correct(mat)
 
         cv2.imwrite(sys.argv[3], corrected_mat)
-    
     else:
-
         for item in analyze_video(sys.argv[2], sys.argv[3]):
 
             if type(item) == dict:
                 video_data = item
-            
+
         [x for x in process_video(video_data, yield_preview=False)]
-        
