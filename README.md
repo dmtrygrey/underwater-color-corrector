@@ -13,6 +13,7 @@
 ```
 $ sudo apt install ffmpeg
 $ sudo apt install pipx
+$ cd ./underwater-color-corrector
 $ python3 -m venv ccolor-venv
 $ ./ccolor-venv/bin/pip3 install opencv-python numpy
 ```
