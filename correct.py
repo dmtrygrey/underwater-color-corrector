@@ -73,9 +73,9 @@ def get_filter_matrix(mat):
     mat[..., 0] = new_r_channel
 
     # Get histogram of all channels
-    hist_r = hist = cv2.calcHist([mat], [0], None, [256], [0,256])
-    hist_g = hist = cv2.calcHist([mat], [1], None, [256], [0,256])
-    hist_b = hist = cv2.calcHist([mat], [2], None, [256], [0,256])
+    hist_r = cv2.calcHist([mat], [0], None, [256], [0,256])
+    hist_g = cv2.calcHist([mat], [1], None, [256], [0,256])
+    hist_b = cv2.calcHist([mat], [2], None, [256], [0,256])
 
     normalize_mat = np.zeros((256, 3))
     threshold_level = (mat.shape[0]*mat.shape[1])/THRESHOLD_RATIO
@@ -233,7 +233,7 @@ def mux_audio(source_with_audio_path, video_without_audio_path, output_path):
         raise RuntimeError(f"ffmpeg failed to mux audio: {stderr}")
 
 
-def process_video(video_data, yield_preview=False):
+def process_video(video_data):
     cap = cv2.VideoCapture(video_data["input_video_path"])
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -276,92 +276,27 @@ def process_video(video_data, yield_preview=False):
         corrected_mat = cv2.cvtColor(corrected_mat, cv2.COLOR_RGB2BGR)
         new_video.write(corrected_mat)
 
-        if yield_preview:
-            preview = frame.copy()
-            width = preview.shape[1] // 2
-            height = preview.shape[0] // 2
-            preview[:, width:] = corrected_mat[:, width:]
-
-            preview = cv2.resize(preview, (width, height))
-
-            yield percent, cv2.imencode('.png', preview)[1].tobytes()
-        else:
-            yield None
-
     cap.release()
     new_video.release()
 
-# def process_video(video_data):
+    print("Processing complete.")
+    print("Merging audio...")
+    processed_path = video_data.get("output_video_path")
+    source_path = video_data.get("input_video_path")
+    print(processed_path, source_path)
 
-#     cap = cv2.VideoCapture(video_data["input_video_path"])
+    if not processed_path or not source_path:
+        print("Cannot mux audio: missing paths in video_data")
+    else:
+        base, ext = os.path.splitext(processed_path)
+        ext = ext if ext else '.mp4'
+        merged_path = f"{base}_with_audio{ext}"
 
-#     frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-#     frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-
-#     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-#     new_video = cv2.VideoWriter(video_data["output_video_path"], fourcc, video_data["fps"], (int(frame_width), int(frame_height)))
-
-#     filter_matrices = video_data["filters"]
-#     filter_indices = video_data["filter_indices"]
-
-#     filter_matrix_size = len(filter_matrices[0])
-
-#     def get_interpolated_filter_matrix(frame_number):
-#         return [np.interp(frame_number, filter_indices, filter_matrices[..., x]) for x in range(filter_matrix_size)]
-
-#     print("Processing...")
-
-#     frame_count = video_data["frame_count"]
-
-#     count = 0
-#     cap = cv2.VideoCapture(video_data["input_video_path"])
-
-#     while(cap.isOpened()):
-#         count += 1
-#         percent = 100*count/frame_count
-#         print("{:.2f}".format(percent), end=" % \r")
-#         ret, frame = cap.read()
-
-#         if not ret:
-#             # End video read if we have gone beyond reported frame count
-#             if count >= frame_count:
-#                 break
-
-#             # Failsafe to prevent an infinite loop
-#             if count >= 1e6:
-#                 break
-
-#             # Otherwise this is just a faulty frame read, try reading next
-#             continue
-
-#         # Apply the filter
-#         rgb_mat = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-#         interpolated_filter_matrix = get_interpolated_filter_matrix(count)
-#         corrected_mat = apply_filter(rgb_mat, interpolated_filter_matrix)
-#         corrected_mat = cv2.cvtColor(corrected_mat, cv2.COLOR_RGB2BGR)
-
-#         new_video.write(corrected_mat)
-
-#     cap.release()
-#     new_video.release()
-
-#     print("Processing complete.")
-#     print("Merging audio...")
-#     processed_path = video_data.get("output_video_path")
-#     source_path = video_data.get("input_video_path")
-
-#     if not processed_path or not source_path:
-#         print("Cannot mux audio: missing paths in video_data")
-#     else:
-#         base, ext = os.path.splitext(processed_path)
-#         ext = ext if ext else '.mp4'
-#         merged_path = f"{base}_with_audio{ext}"
-
-#         try:
-#             mux_audio(source_path, processed_path, merged_path)
-#             print(f"Muxed audio into: {merged_path}")
-#         except Exception as e:
-#             print(f"Failed to mux audio: {e}")
+        try:
+            mux_audio(source_path, processed_path, merged_path)
+            print(f"Muxed audio into: {merged_path}")
+        except Exception as e:
+            print(f"Failed to mux audio: {e}")
 
 
 ## --------------- Main Entry Point --------------- ##
@@ -386,8 +321,7 @@ if __name__ == "__main__":
         cv2.imwrite(sys.argv[3], corrected_mat)
     else:
         for item in analyze_video(sys.argv[2], sys.argv[3]):
-
             if type(item) == dict:
                 video_data = item
 
-        [x for x in process_video(video_data)]
+        process_video(video_data)
