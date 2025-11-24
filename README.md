@@ -26,6 +26,10 @@ $ ./ccolor-venv/bin/python3 correct.py image /my/raw.png /my/corrected.png
 ```
 $ ./ccolor-venv/bin/python3 correct.py video /my/raw.mp4 /my/corrected.mp4
 ```
+Parallel:
+```
+parallel /home/bit/dev/underwater-color-corrector/ccolor-venv/bin/python3 correct.py video {} {.}-cor.mp4 ::: ~/path/to/vids/*.MP4
+```
 
 ### TODO
 - Remove output name, instead original name will be used with prefix
