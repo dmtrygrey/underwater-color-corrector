@@ -1,3 +1,4 @@
+import shutil
 import sys
 import numpy as np
 import cv2
@@ -283,18 +284,19 @@ def process_video(video_data):
     print("Merging audio...")
     processed_path = video_data.get("output_video_path")
     source_path = video_data.get("input_video_path")
-    print(processed_path, source_path)
 
     if not processed_path or not source_path:
         print("Cannot mux audio: missing paths in video_data")
     else:
         base, ext = os.path.splitext(processed_path)
         ext = ext if ext else '.mp4'
-        merged_path = f"{base}_with_audio{ext}"
+        merged_path = f"{base}{ext}"
 
         try:
-            mux_audio(source_path, processed_path, merged_path)
-            print(f"Muxed audio into: {merged_path}")
+            temp_path = f"/tmp/temp_video_no_audio{ext}"
+            shutil.move(processed_path, temp_path)
+            mux_audio(source_path, temp_path, merged_path)
+            os.remove(temp_path)
         except Exception as e:
             print(f"Failed to mux audio: {e}")
 
