@@ -293,7 +293,8 @@ def process_video(video_data):
         merged_path = f"{base}{ext}"
 
         try:
-            temp_path = f"/tmp/temp_video_no_audio{ext}"
+            ## Move processed video to temp directory with the same name
+            temp_path = os.path.join("/tmp", os.path.basename(processed_path))
             shutil.move(processed_path, temp_path)
             mux_audio(source_path, temp_path, merged_path)
             os.remove(temp_path)
