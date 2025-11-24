@@ -30,9 +30,3 @@ Parallel:
 ```
 parallel /home/bit/dev/underwater-color-corrector/ccolor-venv/bin/python3 correct.py video {} {.}-cor.mp4 ::: ~/path/to/vids/*.MP4
 ```
-
-### TODO
-- Remove output name, instead original name will be used with prefix
-- Add audio merge as default with no param
-- Copy video processed before merge into /tmp
-- Move original video in ./bkp
