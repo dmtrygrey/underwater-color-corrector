@@ -26,3 +26,9 @@ $ ./ccolor-venv/bin/python3 correct.py image /my/raw.png /my/corrected.png
 ```
 $ ./ccolor-venv/bin/python3 correct.py video /my/raw.mp4 /my/corrected.mp4
 ```
+
+### TODO
+- Remove output name, instead original name will be used with prefix
+- Add audio merge as default with no param
+- Copy video processed before merge into /tmp
+- Move original video in ./bkp
